@@ -1,0 +1,110 @@
+name: Kernel Build 5.15 2
+
+on:
+  workflow_dispatch:
+    inputs:
+      KERNEL_REPO:
+        description: 'KERNEL_REPO'
+        required: true
+        default: 'https://github.com/zainarbani/kernel-5.15'
+      BUILD_SCRIPT_REPO:
+        description: 'BUILD_SCRIPT_REPO'
+        required: true
+        default: 'https://github.com/zainarbani/kernel_build_script'
+      BUILD_SCRIPT_BRANCH:
+        description: 'BUILD_SCRIPT_BRANCH'
+        required: true
+        default: 'a54x'
+
+jobs:
+  build:
+    if: github.event.repository.owner.id == github.event.sender.id
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    permissions:
+      contents: write
+    
+    strategy:
+      matrix:
+        branches: ['ksu-next-sus', 'ksu-next-sus-oc']
+        #branches: ['main']
+
+    outputs:
+      CLANG_VER: ${{ steps.build_kernel.outputs.CLANG_VER }}
+      KERNEL_VER: ${{ steps.build_kernel.outputs.KERNEL_VER }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Prepare Environment
+        run: |
+          mkdir -p ${{ github.workspace }}/builds/${{ matrix.branches }}
+          sudo apt update
+          sudo apt install -y libelf-dev dwarves
+
+      - name: Sync Kernel
+        run: |
+          cd ${{ github.workspace }}/builds/${{ matrix.branches }}
+          KERNEL_BRANCH=${{ matrix.branches }}
+          git clone --depth=1 -b "${KERNEL_BRANCH/-oc/}" ${{ github.event.inputs.KERNEL_REPO }} kernel
+          cd kernel
+          git clone --depth=1 -b ${{ github.event.inputs.BUILD_SCRIPT_BRANCH }} ${{ github.event.inputs.BUILD_SCRIPT_REPO }} kernel_build
+
+      - name: Build Kernel
+        id: build_kernel
+        run: |
+          cd ${{ github.workspace }}/builds/${{ matrix.branches }}/kernel
+          chmod +x kernel_build/build.sh
+          if [[ ${{ matrix.branches }} == *"-oc"* ]]; then
+            ./kernel_build/build.sh oc
+          else
+            ./kernel_build/build.sh
+          fi
+          KERNEL_VER=$(make kernelversion)
+          CLANG_VER=$(../toolchain/clang/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g')
+          echo "KERNEL_VER=${KERNEL_VER}" >> $GITHUB_OUTPUT
+          echo "CLANG_VER=${CLANG_VER}" >> $GITHUB_OUTPUT
+
+      - name: Prepare Artifacts
+        run: |
+          cd ${{ github.workspace }}/builds/${{ matrix.branches }}/kernel/kernel_build
+          if [[ ${{ matrix.branches }} != "main" ]]; then
+            mv Kernel_a54x.tar Kernel_a54x-${{ matrix.branches }}.tar
+            mv Kernel_a54x.zip Kernel_a54x-${{ matrix.branches }}.zip
+          fi
+          #if [[ ${{ matrix.branches }} == "ksu-next-sus" ]]; then
+          #  7z a hdr.zip ../out/usr/include/*
+          #  curl -F "file=@hdr.zip" https://x0.at
+          #fi
+         
+      - name: Generate Release
+        run: |
+          export TZ="Asia/Jakarta"
+          BUILD_DATE=$(date "+%Y%m%d%H%M")
+          echo "BUILD_DATE=${BUILD_DATE}" >> $GITHUB_ENV
+          echo "BUILD_REL=${{ github.event.inputs.BUILD_SCRIPT_BRANCH }}_${BUILD_DATE}" >> $GITHUB_ENV
+          {
+            echo "**Build Info**"
+            echo ""
+            echo "**Device:** ${{ github.event.inputs.BUILD_SCRIPT_BRANCH }}"
+            echo "**Kernel Source:** ${{ github.event.inputs.KERNEL_REPO }}"
+            echo "**Kernel Version:** ${{ needs.build.outputs.KERNEL_VER }}"
+            echo "**Clang Version:** ${{ needs.build.outputs.CLANG_VER }}"
+            echo "**Notes:**"
+            echo "  - vendor_boot included"
+            echo "  - https://github.com/${{ github.repository }}/releases/tag/${{ env.BUILD_REL }}"
+            echo ""
+            echo "---"
+          } > release.md
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+           ${{ github.workspace }}/builds/${{ matrix.branches }}/kernel/kernel_build/*.tar
+           ${{ github.workspace }}/builds/${{ matrix.branches }}/kernel/kernel_build/*.zip
+          name: ${{ env.BUILD_REL }}
+          tag_name: ${{ env.BUILD_REL }}
+          body_path: release.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

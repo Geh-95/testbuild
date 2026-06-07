@@ -1,4 +1,4 @@
-name: Kernel Build 5.15 2
+name: Kernel Build 5.15
 
 on:
   workflow_dispatch:
@@ -18,14 +18,14 @@ on:
 
 jobs:
   build:
+    if: github.event.repository.owner.id == github.event.sender.id
     runs-on: blacksmith-16vcpu-ubuntu-2204
     permissions:
       contents: write
     
     strategy:
       matrix:
-        build: ['KernelSU-Next', 'KernelSU-Next-OC']
-        #branches: ['Vanilla']
+        build: ['Vanilla', 'Vanilla-OC', 'KernelSU-Next', 'KernelSU-Next-OC']
 
     outputs:
       CLANG_VER: ${{ steps.build_kernel.outputs.CLANG_VER }}
@@ -40,8 +40,6 @@ jobs:
           mkdir -p ${{ github.workspace }}/builds/${{ matrix.build }}
           sudo apt update
           sudo apt install -y libelf-dev dwarves
-          git config --global user.name bot
-          git config --global user.email user@noreply.github.com
 
       - name: Sync Kernel
         run: |
@@ -81,9 +79,30 @@ jobs:
       - name: Prepare Artifacts
         run: |
           cd ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build
-          mv Kernel_a54x.tar Kernel_a54x-${{ matrix.build }}.tar
-          mv Kernel_a54x.zip Kernel_a54x-${{ matrix.build }}.zip
-         
+          mv Kernel_a54x.tar Exynoobs_a54x-${{ matrix.build }}.tar
+          mv Kernel_a54x.zip Exynoobs_a54x-${{ matrix.build }}.zip
+          
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-builds-${{ matrix.build }}
+          retention-days: 0
+          path: |
+            ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/*.tar
+            ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Gather Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
       - name: Generate Release
         run: |
           export TZ="Asia/Jakarta"
@@ -98,8 +117,7 @@ jobs:
             echo "**Kernel Version:** ${{ needs.build.outputs.KERNEL_VER }}"
             echo "**Clang Version:** ${{ needs.build.outputs.CLANG_VER }}"
             echo "**Notes:**"
-            echo "  - vendor_boot included"
-            echo "  - https://github.com/${{ github.repository }}/releases/tag/${{ env.BUILD_REL }}"
+            echo "    - vendor_boot included"
             echo ""
             echo "---"
           } > release.md
@@ -107,11 +125,15 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-           ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/*.tar
-           ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/*.zip
+          files: artifacts/**
           name: ${{ env.BUILD_REL }}
           tag_name: ${{ env.BUILD_REL }}
           body_path: release.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete Artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: kernel-builds-*
+          failOnError: false

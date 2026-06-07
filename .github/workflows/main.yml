@@ -52,6 +52,7 @@ jobs:
           cd kernel
           git revert --no-edit 3bd648cfcbdcfb4ae5b200a4e2d2382fc7f2810c
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/stable/kernel/setup.sh" | bash -s stable
+          curl -sL "https://raw.githubusercontent.com/Enginex0/Super-Builders/refs/heads/main/android13-5.15/samsung-fixes/SM-A546E-Oneui7/fix_namespace_context.patch" |  patch -p1 -F3 --no-backup-if-mismatch
           curl -sL "${KSU_PATCH}/50_add_susfs_in_gki-android13-5.15.patch" |  patch -p1 -F3 --no-backup-if-mismatch
           curl -sL "${KSU_PATCH}/51_enhanced_susfs-android13-5.15.patch" |  patch -p1 -F3 --no-backup-if-mismatch
           curl -sL "${KSU_PATCH}/60_zeromount-android13-5.15.patch" |  patch -p1 -F3 --no-backup-if-mismatch

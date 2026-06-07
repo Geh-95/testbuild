@@ -40,6 +40,8 @@ jobs:
           mkdir -p ${{ github.workspace }}/builds/${{ matrix.branches }}
           sudo apt update
           sudo apt install -y libelf-dev dwarves
+          git config --global user.name bot
+          git config --global user.email user@noreply.github.com
 
       - name: Sync Kernel
         run: |

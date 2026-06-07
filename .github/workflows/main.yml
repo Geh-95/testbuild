@@ -18,7 +18,6 @@ on:
 
 jobs:
   build:
-    if: github.event.repository.owner.id == github.event.sender.id
     runs-on: blacksmith-16vcpu-ubuntu-2204
     permissions:
       contents: write

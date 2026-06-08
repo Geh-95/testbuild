@@ -24,7 +24,7 @@ jobs:
     
     strategy:
       matrix:
-        build: ['KernelSU-Next-OC']
+        build: ['Vanilla', 'Vanilla-OC', 'KernelSU-Next', 'KernelSU-Next-OC']
 
     outputs:
       CLANG_VER: ${{ steps.build_kernel.outputs.CLANG_VER }}
@@ -43,16 +43,17 @@ jobs:
           git config --global user.email user@noreply.github.com
 
       - name: Sync Kernel
+        env:
+          KERNEL_BRANCH: ${{ contains(matrix.build, 'KernelSU') && 'ksu-next-sus' || 'main' }}
+        working-directory: builds/${{ matrix.build }}
         run: |
-          cd ${{ github.workspace }}/builds/${{ matrix.build }}
-          git clone -b ksu-next-sus ${{ github.event.inputs.KERNEL_REPO }} kernel
-          cd kernel
-          git clone --depth=1 -b ${{ github.event.inputs.BUILD_SCRIPT_BRANCH }} ${{ github.event.inputs.BUILD_SCRIPT_REPO }} kernel_build
+          git clone --depth=1 -b "${KERNEL_BRANCH}" ${{ github.event.inputs.KERNEL_REPO }} kernel
+          git clone --depth=1 -b ${{ github.event.inputs.BUILD_SCRIPT_BRANCH }} ${{ github.event.inputs.BUILD_SCRIPT_REPO }} kernel/kernel_build
 
       - name: Build Kernel
         id: build_kernel
+        working-directory: builds/${{ matrix.build }}/kernel
         run: |
-          cd ${{ github.workspace }}/builds/${{ matrix.build }}/kernel
           chmod +x kernel_build/build.sh
           if [[ ${{ matrix.build }} == *"-OC"* ]]; then
             ./kernel_build/build.sh oc
@@ -65,8 +66,8 @@ jobs:
           echo "CLANG_VER=${CLANG_VER}" >> $GITHUB_OUTPUT
 
       - name: Prepare Artifacts
+        working-directory: builds/${{ matrix.build }}/kernel/kernel_build
         run: |
-          cd ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build
           mv Kernel_a54x.tar Exynoobs_a54x-${{ matrix.build }}.tar
           mv Kernel_a54x.zip Exynoobs_a54x-${{ matrix.build }}.zip
           
@@ -125,4 +126,4 @@ jobs:
         with:
           name: kernel-builds-*
           failOnError: false
-
+          

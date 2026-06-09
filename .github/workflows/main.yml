@@ -24,7 +24,7 @@ jobs:
     
     strategy:
       matrix:
-        build: ['Vanilla', 'Vanilla-OC', 'KernelSU-Next', 'KernelSU-Next-OC']
+        build: ['KernelSU-Next-OC']
 
     outputs:
       CLANG_VER: ${{ steps.build_kernel.outputs.CLANG_VER }}

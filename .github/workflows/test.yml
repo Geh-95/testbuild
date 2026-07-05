@@ -44,7 +44,7 @@ jobs:
 
       - name: Sync Kernel
         env:
-          KERNEL_BRANCH: ${{ contains(matrix.build, 'KernelSU') && 'ksu-next-sus' || 'main' }}
+          KERNEL_BRANCH: 'osrc'
         working-directory: builds/${{ matrix.build }}
         run: |
           git clone --depth=1 -b "${KERNEL_BRANCH}" ${{ github.event.inputs.KERNEL_REPO }} kernel

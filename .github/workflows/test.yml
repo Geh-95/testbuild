@@ -79,6 +79,7 @@ jobs:
           path: |
             ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/*.tar
             ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/*.zip
+            ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/vmlinux
 
   release:
     needs: build

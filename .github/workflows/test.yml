@@ -14,7 +14,7 @@ on:
       BUILD_SCRIPT_BRANCH:
         description: 'BUILD_SCRIPT_BRANCH'
         required: true
-        default: 'a54x'
+        default: 'osrc'
 
 jobs:
   build:

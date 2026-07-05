@@ -1,0 +1,129 @@
+name: Kernel Build 5.15
+
+on:
+  workflow_dispatch:
+    inputs:
+      KERNEL_REPO:
+        description: 'KERNEL_REPO'
+        required: true
+        default: 'https://github.com/zainarbani/kernel-5.15'
+      BUILD_SCRIPT_REPO:
+        description: 'BUILD_SCRIPT_REPO'
+        required: true
+        default: 'https://github.com/zainarbani/kernel_build_script'
+      BUILD_SCRIPT_BRANCH:
+        description: 'BUILD_SCRIPT_BRANCH'
+        required: true
+        default: 'a54x'
+
+jobs:
+  build:
+    runs-on: blacksmith-16vcpu-ubuntu-2204
+    permissions:
+      contents: write
+    
+    strategy:
+      matrix:
+        build: ['osrc']
+
+    outputs:
+      CLANG_VER: ${{ steps.build_kernel.outputs.CLANG_VER }}
+      KERNEL_VER: ${{ steps.build_kernel.outputs.KERNEL_VER }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Prepare Environment
+        run: |
+          mkdir -p ${{ github.workspace }}/builds/${{ matrix.build }}
+          sudo apt update
+          sudo apt install -y libelf-dev dwarves
+          git config --global user.name bot
+          git config --global user.email user@noreply.github.com
+
+      - name: Sync Kernel
+        env:
+          KERNEL_BRANCH: ${{ contains(matrix.build, 'KernelSU') && 'ksu-next-sus' || 'main' }}
+        working-directory: builds/${{ matrix.build }}
+        run: |
+          git clone --depth=1 -b "${KERNEL_BRANCH}" ${{ github.event.inputs.KERNEL_REPO }} kernel
+          git clone --depth=1 -b ${{ github.event.inputs.BUILD_SCRIPT_BRANCH }} ${{ github.event.inputs.BUILD_SCRIPT_REPO }} kernel/kernel_build
+
+      - name: Build Kernel
+        id: build_kernel
+        working-directory: builds/${{ matrix.build }}/kernel
+        run: |
+          chmod +x kernel_build/build.sh
+          if [[ ${{ matrix.build }} == *"-OC"* ]]; then
+            ./kernel_build/build.sh oc
+          else
+            ./kernel_build/build.sh
+          fi
+          KERNEL_VER=$(make kernelversion)
+          CLANG_VER=$(../toolchain/clang/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g')
+          echo "KERNEL_VER=${KERNEL_VER}" >> $GITHUB_OUTPUT
+          echo "CLANG_VER=${CLANG_VER}" >> $GITHUB_OUTPUT
+
+      - name: Prepare Artifacts
+        working-directory: builds/${{ matrix.build }}/kernel/kernel_build
+        run: |
+          mv Kernel_a54x.tar Exynoobs_a54x-${{ matrix.build }}.tar
+          mv Kernel_a54x.zip Exynoobs_a54x-${{ matrix.build }}.zip
+          
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-builds-${{ matrix.build }}
+          retention-days: 0
+          path: |
+            ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/*.tar
+            ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Gather Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Generate Release
+        run: |
+          export TZ="Asia/Jakarta"
+          BUILD_DATE=$(date "+%Y%m%d%H%M")
+          echo "BUILD_DATE=${BUILD_DATE}" >> $GITHUB_ENV
+          echo "BUILD_REL=${{ github.event.inputs.BUILD_SCRIPT_BRANCH }}_${BUILD_DATE}" >> $GITHUB_ENV
+          {
+            echo "**Build Info**"
+            echo ""
+            echo "**Device:** ${{ github.event.inputs.BUILD_SCRIPT_BRANCH }}"
+            echo "**Kernel Source:** ${{ github.event.inputs.KERNEL_REPO }}"
+            echo "**Kernel Version:** ${{ needs.build.outputs.KERNEL_VER }}"
+            echo "**Clang Version:** ${{ needs.build.outputs.CLANG_VER }}"
+            echo "**Notes:**"
+            echo "    - vendor_boot included"
+            echo ""
+            echo "---"
+          } > release.md
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**
+          name: ${{ env.BUILD_REL }}
+          tag_name: ${{ env.BUILD_REL }}
+          body_path: release.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete Artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: kernel-builds-*
+          failOnError: false
+          
